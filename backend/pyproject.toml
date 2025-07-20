@@ -1,0 +1,43 @@
+[project]
+name = "food-api"
+version = "1.0.0"
+description = "AI-powered food recommendation API with RAG and MCP"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.128.0",
+    "uvicorn[standard]>=0.34.0",
+    "sqlmodel>=0.0.24",
+    "asyncpg>=0.30.0",
+    "psycopg2-binary>=2.9.10",
+    "chromadb>=1.4.1",
+    "langchain>=0.3.18",
+    "langchain-openai>=0.3.5",
+    "langchain-chroma>=0.2.2",
+    "openai>=1.63.0",
+    "mcp>=1.25.0",
+    "python-dotenv>=1.0.1",
+    "sse-starlette>=2.2.1",
+    "httpx>=0.28.1",
+    "pydantic-settings>=2.7.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.4",
+    "pytest-asyncio>=0.25.2",
+    "httpx>=0.28.1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=8.3.4",
+    "pytest-asyncio>=0.25.2",
+]
