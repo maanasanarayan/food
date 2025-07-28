@@ -56,6 +56,157 @@ graph TB
     API --> OPENAI
 ```
 
+---
+
+## How It Works
+
+### RAG Pipeline (Retrieval-Augmented Generation)
+
+The app uses a RAG architecture to provide contextually relevant food recommendations. Instead of relying solely on the LLM's training data, we retrieve relevant dishes from our curated database first.
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant API as FastAPI
+    participant Chroma as ChromaDB
+    participant OpenAI
+
+    User->>API: "I want something spicy for breakfast"
+    API->>Chroma: Semantic search query + filters
+    Note over Chroma: Embedding similarity search<br/>+ allergen exclusion<br/>+ dietary filters
+    Chroma-->>API: Top 5 relevant dishes
+    API->>OpenAI: User query + Retrieved context + System prompt
+    OpenAI-->>API: Streaming response
+    API-->>User: SSE stream with recommendations
+```
+
+**Why RAG?**
+
+- The LLM doesn't need to "know" every dish - we provide the context
+- Recommendations are always from our verified, curated dataset
+- Easy to add new dishes without retraining
+- Allergen filtering happens at retrieval, not generation
+
+---
+
+### ChromaDB: Vector Search Engine
+
+ChromaDB stores dish embeddings for semantic similarity search. When a user asks for "something light and healthy", we don't do keyword matching - we find dishes whose descriptions are semantically similar.
+
+```mermaid
+flowchart LR
+    subgraph Ingestion["Data Ingestion"]
+        JSON["foods.json<br/>57 dishes"] --> Embed["OpenAI<br/>Embeddings"]
+        Embed --> Store["ChromaDB<br/>Collection"]
+    end
+    
+    subgraph Query["Query Time"]
+        Q["User Query"] --> QEmbed["Query<br/>Embedding"]
+        QEmbed --> Search["Similarity<br/>Search"]
+        Search --> Filter["Metadata<br/>Filters"]
+        Filter --> Results["Top K<br/>Results"]
+    end
+    
+    Store -.-> Search
+```
+
+**Metadata Filtering:**
+
+```python
+# Example: Find high-protein South Indian dishes, excluding dairy
+where={
+    "$and": [
+        {"cuisine": "south_indian"},
+        {"is_high_protein": True},
+        {"allergens": {"$nin": ["dairy"]}}
+    ]
+}
+```
+
+---
+
+### OpenAI Integration
+
+We use OpenAI's GPT-4o-mini for response generation with streaming for real-time UX.
+
+```mermaid
+flowchart TB
+    subgraph Context["Context Assembly"]
+        SYS["System Prompt<br/>(Indian food expert)"]
+        PREFS["User Preferences<br/>(spice, allergies)"]
+        DOCS["Retrieved Dishes<br/>(from ChromaDB)"]
+    end
+    
+    subgraph Generation["Response Generation"]
+        PROMPT["Combined Prompt"]
+        STREAM["Streaming<br/>Completion"]
+        SSE["Server-Sent<br/>Events"]
+    end
+    
+    SYS --> PROMPT
+    PREFS --> PROMPT
+    DOCS --> PROMPT
+    PROMPT --> STREAM
+    STREAM --> SSE
+```
+
+**System Prompt Structure:**
+
+```text
+You are an expert on Indian vegetarian cuisine...
+
+User Preferences:
+- Spice Level: Medium
+- Allergies: Dairy
+- Health Goals: High Protein
+
+Available Dishes (from database):
+1. Pesarattu - High protein South Indian crepe...
+2. Sprouts Salad - Protein-rich healthy option...
+...
+
+Based on these dishes, recommend options for: {user_query}
+```
+
+---
+
+### MCP (Model Context Protocol) Tools
+
+MCP provides a standardized way for AI models to interact with external tools and data sources. Our MCP server exposes three tools:
+
+```mermaid
+flowchart LR
+    subgraph MCPServer["MCP Server"]
+        T1["search_food"]
+        T2["get_food_details"]
+        T3["save_preferences"]
+    end
+    
+    subgraph Resources["Data Resources"]
+        CHROMA[("ChromaDB")]
+        PG[("PostgreSQL")]
+    end
+    
+    AI["AI Agent<br/>(Claude, etc.)"] <--> MCPServer
+    T1 <--> CHROMA
+    T2 <--> CHROMA
+    T3 <--> PG
+```
+
+| Tool | Description | Parameters |
+|------|-------------|------------|
+| `search_food` | Semantic search with filters | `query`, `cuisine?`, `spice_level?`, `exclude_allergens?` |
+| `get_food_details` | Full dish information | `food_name` |
+| `save_preferences` | Persist user dietary prefs | `user_id`, `preferences` |
+
+**MCP enables:**
+
+- IDE integrations (Claude Desktop, VS Code)
+- Multi-agent workflows
+- Standardized tool calling across different AI providers
+
+---
+
 ## Components
 
 ```mermaid
@@ -89,19 +240,55 @@ graph LR
 
 ---
 
+## Data Flow
+
+```mermaid
+flowchart TB
+    subgraph UserAction["User Action"]
+        MSG["Send Message"]
+        PREF["Update Preferences"]
+    end
+    
+    subgraph Backend["Backend Processing"]
+        direction TB
+        PARSE["Parse Request"]
+        RETRIEVE["Retrieve Relevant Dishes"]
+        FILTER["Apply Preference Filters"]
+        GENERATE["Generate Response"]
+    end
+    
+    subgraph Storage["Persistence"]
+        CHROMA[("ChromaDB<br/>Vector Store")]
+        PG[("PostgreSQL<br/>User Data")]
+        LOCAL["localStorage<br/>Client Prefs"]
+    end
+    
+    MSG --> PARSE
+    PARSE --> RETRIEVE
+    RETRIEVE --> CHROMA
+    CHROMA --> FILTER
+    FILTER --> GENERATE
+    GENERATE --> MSG
+    
+    PREF --> PG
+    PREF --> LOCAL
+```
+
+---
+
 ## Tech Stack
 
-| Layer | Technology | Version |
-| ----- | ---------- | ------- |
-| Frontend | React + Vite | 19.x + 7.x |
-| UI | shadcn/ui + Tailwind | 3.7 + 4.x |
-| Package Manager | Bun | 1.3+ |
-| Backend | FastAPI | 0.128+ |
-| Python Deps | uv | latest |
-| Vector DB | ChromaDB | 1.4+ |
-| Database | PostgreSQL | 17 |
-| LLM | OpenAI | gpt-4o-mini |
-| Tools | MCP Python SDK | 1.25+ |
+| Layer | Technology |
+| ----- | ---------- |
+| Frontend | React + Vite |
+| UI | shadcn/ui + Tailwind |
+| Package Manager | Bun |
+| Backend | FastAPI |
+| Python Deps | uv |
+| Vector DB | ChromaDB |
+| Database | PostgreSQL |
+| LLM | OpenAI gpt-4o-mini |
+| Tools | MCP Python SDK |
 
 ---
 
@@ -109,30 +296,30 @@ graph LR
 
 ```text
 food/
-├── setup.sh               # One-command bootstrap
-├── docker-compose.yml     # All services
-├── .env.example           # Environment template
+├── setup.sh
+├── docker-compose.yml
+├── .env.example
 ├── backend/
-│   ├── pyproject.toml     # uv dependencies
+│   ├── pyproject.toml
 │   ├── Dockerfile
 │   ├── app/
-│   │   ├── main.py        # FastAPI app
-│   │   ├── api/           # API endpoints
-│   │   ├── db/            # SQLModel models
-│   │   ├── rag/           # ChromaDB retriever
-│   │   ├── llm/           # OpenAI client
-│   │   └── mcp/           # MCP tools server
+│   │   ├── main.py
+│   │   ├── api/
+│   │   ├── db/
+│   │   ├── rag/
+│   │   ├── llm/
+│   │   └── mcp/
 │   └── data/
-│       └── foods.json     # 57 Indian dishes
+│       └── foods.json
 └── frontend/
-    ├── package.json       # Bun dependencies
+    ├── package.json
     ├── Dockerfile
     ├── nginx.conf
     └── src/
         ├── App.tsx
-        ├── components/    # Chat UI components
-        ├── hooks/         # useChat hook
-        └── lib/           # API client
+        ├── components/
+        ├── hooks/
+        └── lib/
 ```
 
 ---
