@@ -1,3 +1,6 @@
+---
+slug: /
+---
 # Introduction
 
 Welcome to the **Indian Food Companion** documentation. This guide will teach you how to build a complete AI-powered food recommendation application from scratch.
